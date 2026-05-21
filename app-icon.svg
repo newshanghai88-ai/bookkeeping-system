@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="记账系统">
-  <rect width="512" height="512" rx="112" fill="#2563eb"/>
-  <rect x="112" y="96" width="288" height="320" rx="34" fill="#ffffff"/>
-  <rect x="144" y="146" width="224" height="28" rx="14" fill="#dbeafe"/>
-  <rect x="144" y="205" width="224" height="20" rx="10" fill="#bfdbfe"/>
-  <rect x="144" y="257" width="132" height="20" rx="10" fill="#bfdbfe"/>
-  <circle cx="330" cy="318" r="58" fill="#16a34a"/>
-  <path d="M330 283v70M295 318h70" stroke="#ffffff" stroke-width="28" stroke-linecap="round"/>
-</svg>
