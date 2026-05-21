@@ -28,7 +28,7 @@ create table if not exists transactions (
   company_id uuid references companies(id),
   transaction_date date not null,
   amount numeric(12,2) not null check (amount >= 0),
-  transaction_type text not null check (transaction_type in ('收入', '支出', '欠款', '还款')),
+  transaction_type text not null check (transaction_type in ('欠款', '还款', '银行汇款')),
   remittance_company text,
   remittance_method text not null check (remittance_method in ('现金', '银行转账', '微信', '支付宝', '其他')),
   remittance_account text,
@@ -43,6 +43,29 @@ create table if not exists transactions (
 
 alter table transactions
 add column if not exists company_id uuid references companies(id);
+
+do $$
+declare
+  constraint_name text;
+begin
+  select con.conname
+  into constraint_name
+  from pg_constraint con
+  join pg_class rel on rel.oid = con.conrelid
+  join pg_namespace nsp on nsp.oid = rel.relnamespace
+  where rel.relname = 'transactions'
+    and nsp.nspname = 'public'
+    and con.contype = 'c'
+    and pg_get_constraintdef(con.oid) like '%transaction_type%';
+
+  if constraint_name is not null then
+    execute format('alter table transactions drop constraint %I', constraint_name);
+  end if;
+end $$;
+
+alter table transactions
+add constraint transactions_transaction_type_check
+check (transaction_type in ('欠款', '还款', '银行汇款'));
 
 create table if not exists backup_logs (
   id uuid primary key default gen_random_uuid(),

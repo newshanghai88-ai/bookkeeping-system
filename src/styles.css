@@ -175,6 +175,20 @@ textarea {
   margin: 16px 0;
 }
 
+.compact-totals {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.company-summary {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  margin: 16px 0;
+  padding: 12px;
+}
+
 .totals div {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -304,7 +318,7 @@ textarea {
 
 @media (min-width: 760px) {
   .filters {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     align-items: end;
   }
 
@@ -313,7 +327,12 @@ textarea {
   }
 
   .transaction {
-    grid-template-columns: 150px 100px 1.6fr 1fr 1.5fr auto;
+    grid-template-columns: 120px 1.4fr 110px 100px 1.5fr auto;
+    align-items: center;
+  }
+
+  .company-summary {
+    grid-template-columns: 1.5fr 1fr 1fr 1fr;
     align-items: center;
   }
 
@@ -367,5 +386,9 @@ textarea {
 
   .export-actions button {
     flex: 1 1 100%;
+  }
+
+  .compact-totals {
+    grid-template-columns: 1fr;
   }
 }

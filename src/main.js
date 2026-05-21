@@ -73,25 +73,32 @@ function getCompanyLabel(itemOrCompanyId) {
   return '';
 }
 
+function getDefaultStoreId() {
+  const savedStoreId = localStorage.getItem('last_store_id');
+  if (state.stores.some((store) => store.id === savedStoreId)) return savedStoreId;
+  return state.stores[0]?.id || '';
+}
+
+function getTypeLabel(type) {
+  return type || '';
+}
+
 function getTotals() {
   const totals = {
-    income: 0,
-    expense: 0,
     debt: 0,
     repayment: 0,
+    bankTransfer: 0,
   };
 
   for (const item of state.transactions) {
     const amount = Number(item.amount || 0);
-    if (item.transaction_type === '收入') totals.income += amount;
-    if (item.transaction_type === '支出') totals.expense += amount;
     if (item.transaction_type === '欠款') totals.debt += amount;
     if (item.transaction_type === '还款') totals.repayment += amount;
+    if (item.transaction_type === '银行汇款') totals.bankTransfer += amount;
   }
 
   return {
     ...totals,
-    net: totals.income + totals.repayment - totals.expense - totals.debt,
     totalDebt: totals.debt - totals.repayment,
   };
 }
@@ -118,15 +125,15 @@ function getFriendlyError(error) {
   }
 
   if (message.includes('company is required')) {
-    return '保存失败：请选择公司。';
+    return '保存失败：请选择公司/店号。';
   }
 
   if (message.includes('company not found')) {
-    return '保存失败：没有找到这个公司，可能已经停用，请刷新后重新选择。';
+    return '保存失败：没有找到这个公司/店号，可能已经停用，请刷新后重新选择。';
   }
 
   if (message.includes('idx_companies_name_unique')) {
-    return '公司已存在，请直接选择已有公司。';
+    return '公司/店号已存在，请直接选择已有名称。';
   }
 
   return `操作失败：${message}`;
@@ -231,7 +238,6 @@ async function updateCompany(id, company) {
     .from('companies')
     .update({
       company_name: company.company_name,
-      company_type: company.company_type,
       phone: company.phone || null,
       remark: company.remark || null,
     })
@@ -251,7 +257,7 @@ async function softDeleteCompany(id) {
 
 async function quickAddCompany(name) {
   const companyName = name.trim();
-  if (!companyName) throw new Error('请输入公司名称');
+  if (!companyName) throw new Error('请输入公司/店号名称');
 
   const existing = state.companies.find((item) => normalizeName(item.company_name) === normalizeName(companyName));
   if (existing) return existing.id;
@@ -336,8 +342,8 @@ function readForm(form) {
   const formData = new FormData(form);
   const amount = Number(formData.get('amount'));
 
-  if (!formData.get('store_id')) throw new Error('请选择店号');
-  if (!formData.get('company_id')) throw new Error('请选择公司');
+  if (!formData.get('store_id')) throw new Error('没有可用的默认店铺，请先在数据库创建一个店铺');
+  if (!formData.get('company_id')) throw new Error('请选择公司/店号');
   if (!Number.isFinite(amount) || amount < 0) throw new Error('金额必须是大于等于 0 的数字');
 
   return {
@@ -346,9 +352,9 @@ function readForm(form) {
     company_id: formData.get('company_id'),
     amount,
     transaction_type: formData.get('transaction_type'),
-    remittance_method: formData.get('remittance_method'),
+    remittance_method: '银行转账',
     remark: formData.get('remark').trim(),
-    operator: formData.get('operator').trim(),
+    operator: state.session?.user?.email || '',
   };
 }
 
@@ -398,7 +404,7 @@ function storeOptions(selectedId = '') {
 
 function companyOptions(selectedId = '') {
   return [
-    '<option value="">请选择公司</option>',
+    '<option value="">请选择公司/店号</option>',
     ...state.companies.map(
       (company) =>
         `<option value="${escapeHtml(company.id)}" ${company.id === selectedId ? 'selected' : ''}>${escapeHtml(company.company_name)}</option>`,
@@ -409,22 +415,19 @@ function companyOptions(selectedId = '') {
 function transactionForm(item = null) {
   return `
     <form id="${item ? 'edit-form' : 'create-form'}" class="form">
+      <input type="hidden" name="store_id" value="${escapeHtml(item?.store_id || getDefaultStoreId())}" />
       <label>
         日期
         <input name="transaction_date" type="date" value="${item?.transaction_date || localStorage.getItem('last_transaction_date') || today()}" required />
       </label>
       <label>
-        店号
-        <select name="store_id" required>${storeOptions(item?.store_id || localStorage.getItem('last_store_id') || '')}</select>
-      </label>
-      <label>
-        公司
+        公司/店号
         <select name="company_id" required>${companyOptions(item?.company_id || localStorage.getItem('last_company_id') || '')}</select>
       </label>
       <div class="quick-company">
         <label>
-          快速新增公司
-          <input id="quick-company-name" placeholder="输入公司名后点击新增" />
+          新公司/店号
+          <input id="quick-company-name" placeholder="输入新名称" />
         </label>
         <button type="button" class="secondary" id="quick-add-company">新增并选中</button>
       </div>
@@ -436,29 +439,18 @@ function transactionForm(item = null) {
       <label>
         类型
         <select name="transaction_type" required>
-          ${['收入', '支出', '欠款', '还款']
-            .map((type) => `<option value="${type}" ${type === (item?.transaction_type || '支出') ? 'selected' : ''}>${type}</option>`)
-            .join('')}
-        </select>
-      </label>
-      <label>
-        汇款方式
-        <select name="remittance_method" required>
-          ${['现金', '银行转账', '微信', '支付宝', '其他']
-            .map(
-              (method) =>
-                `<option value="${method}" ${method === (item?.remittance_method || localStorage.getItem('last_remittance_method') || '现金') ? 'selected' : ''}>${method}</option>`,
-            )
+          ${[
+              { value: '欠款', label: '欠款' },
+              { value: '还款', label: '还款' },
+              { value: '银行汇款', label: '银行汇款' },
+            ]
+            .map((type) => `<option value="${type.value}" ${type.value === (item?.transaction_type || '欠款') ? 'selected' : ''}>${type.label}</option>`)
             .join('')}
         </select>
       </label>
       <label>
         备注
         <textarea name="remark" rows="3">${escapeHtml(item?.remark || '')}</textarea>
-      </label>
-      <label>
-        操作人显示名
-        <input name="operator" value="${escapeHtml(item?.operator || state.session?.user?.email || '')}" />
       </label>
       <button type="submit">${item ? '保存修改' : '保存账目'}</button>
       ${item ? '<button type="button" class="secondary" id="cancel-edit">取消编辑</button>' : ''}
@@ -478,7 +470,6 @@ function renderApp() {
     <nav class="tabs">
       ${renderTabButton('entry', '记账')}
       ${renderTabButton('details', '明细')}
-      ${renderTabButton('debts', '公司欠款')}
       ${renderTabButton('companies', '公司管理')}
       ${renderTabButton('backup', '备份')}
     </nav>
@@ -496,7 +487,6 @@ function renderTabButton(tabId, label) {
 
 function renderActivePage(editingItem, editingCompany) {
   if (state.activeTab === 'details') return renderDetailsPage(editingItem);
-  if (state.activeTab === 'debts') return renderCompanyDebtSection();
   if (state.activeTab === 'companies') return renderCompanyManager(editingCompany);
   if (state.activeTab === 'backup') return renderBackupPage();
   return renderEntryPage(editingItem);
@@ -514,6 +504,7 @@ function renderEntryPage(editingItem) {
 
 function renderDetailsPage(editingItem) {
   const totals = getTotals();
+  const selectedCompanyDebt = state.filters.companyId ? getCompanyDebtRow(state.filters.companyId) : null;
 
   return `
     <section class="panel page-panel">
@@ -537,24 +528,27 @@ function renderDetailsPage(editingItem) {
           <input name="endDate" type="date" value="${state.filters.endDate}" />
         </label>
         <label>
-          店号
-          <select name="storeId">${storeOptions(state.filters.storeId)}</select>
-        </label>
-        <label>
-          公司
+          公司/店号
           <select name="companyId">${companyOptions(state.filters.companyId)}</select>
         </label>
         <button type="submit">查询</button>
         <button type="button" class="secondary" id="reset-filter">重置</button>
       </form>
 
-      <div class="totals">
-        <div><span>收入</span><strong>${money(totals.income)}</strong></div>
-        <div><span>支出</span><strong>${money(totals.expense)}</strong></div>
-        <div><span>欠款</span><strong>${money(totals.debt)}</strong></div>
-        <div><span>还款</span><strong>${money(totals.repayment)}</strong></div>
-        <div><span>净额</span><strong class="${totals.net >= 0 ? 'positive' : 'negative'}">${money(totals.net)}</strong></div>
-        <div><span>总欠款</span><strong>${money(totals.totalDebt)}</strong></div>
+      ${selectedCompanyDebt ? `
+        <div class="company-summary">
+          <strong>${escapeHtml(selectedCompanyDebt.companyName)}</strong>
+          <span>欠款合计：${money(selectedCompanyDebt.debt)}</span>
+          <span>还款合计：${money(selectedCompanyDebt.repayment)}</span>
+          <span class="${selectedCompanyDebt.balance >= 0 ? 'negative' : 'positive'}">当前余额：${money(selectedCompanyDebt.balance)}</span>
+        </div>
+      ` : ''}
+
+      <div class="totals compact-totals">
+        <div><span>欠款合计</span><strong>${money(totals.debt)}</strong></div>
+        <div><span>还款合计</span><strong>${money(totals.repayment)}</strong></div>
+        <div><span>银行汇款</span><strong>${money(totals.bankTransfer)}</strong></div>
+        <div><span>当前余额</span><strong class="${totals.totalDebt >= 0 ? 'negative' : 'positive'}">${money(totals.totalDebt)}</strong></div>
       </div>
 
       <div class="list">
@@ -592,6 +586,7 @@ function getCompanyDebtRows() {
 
     if (!byCompany.has(transaction.company_id)) {
       byCompany.set(transaction.company_id, {
+        companyId: transaction.company_id,
         companyName: company.company_name,
         debt: 0,
         repayment: 0,
@@ -609,6 +604,16 @@ function getCompanyDebtRows() {
   return [...byCompany.values()]
     .filter((row) => row.debt > 0 || row.repayment > 0)
     .sort((a, b) => b.balance - a.balance);
+}
+
+function getCompanyDebtRow(companyId) {
+  return getCompanyDebtRows().find((row) => row.companyId === companyId) || {
+    companyId,
+    companyName: getCompanyLabel(companyId),
+    debt: 0,
+    repayment: 0,
+    balance: 0,
+  };
 }
 
 function renderCompanyDebtSection() {
@@ -639,17 +644,11 @@ function renderCompanyDebtSection() {
 function renderCompanyManager(editingCompany = null) {
   return `
     <section class="panel page-panel">
-      <h2>${editingCompany ? '编辑公司' : '公司管理'}</h2>
+      <h2>${editingCompany ? '编辑公司/店号' : '公司/店号管理'}</h2>
       <form id="company-form" class="form">
         <label>
-          公司名称
+          公司/店号名称
           <input name="company_name" value="${escapeHtml(editingCompany?.company_name || '')}" required />
-        </label>
-        <label>
-          公司类型
-          <select name="company_type">
-            ${['客户', '供应商', '其他'].map((type) => `<option value="${type}" ${type === (editingCompany?.company_type || '其他') ? 'selected' : ''}>${type}</option>`).join('')}
-          </select>
         </label>
         <label>
           电话
@@ -664,7 +663,7 @@ function renderCompanyManager(editingCompany = null) {
       </form>
 
       <label class="company-search">
-        搜索公司
+        搜索公司/店号
         <input id="company-search" value="${escapeHtml(state.companySearch)}" placeholder="公司名、电话、备注" />
       </label>
 
@@ -691,7 +690,6 @@ function renderCompanyListItems() {
         <article class="company-item">
           <div>
             <strong>${escapeHtml(company.company_name)}</strong>
-            <span class="tag">${escapeHtml(company.company_type)}</span>
             <p class="muted">${escapeHtml(company.phone || '')} ${escapeHtml(company.remark || '')}</p>
           </div>
           <div class="actions">
@@ -744,11 +742,10 @@ function renderTransactionItem(item) {
     <article class="transaction">
       <div>
         <strong>${escapeHtml(item.transaction_date)}</strong>
-        <span class="tag">${escapeHtml(item.transaction_type)}</span>
       </div>
-      <div class="amount">${money(item.amount)}</div>
-      <div class="muted">${escapeHtml(item.serial_no)} · ${escapeHtml(getStoreLabel(item.store_id))} · ${escapeHtml(item.remittance_method || '')}</div>
       <div>${escapeHtml(companyName)}</div>
+      <div class="amount">${money(item.amount)}</div>
+      <div><span class="tag">${escapeHtml(getTypeLabel(item.transaction_type))}</span></div>
       <div class="muted">${escapeHtml(item.remark || '')}</div>
       <div class="actions">
         <button class="secondary small" data-edit="${escapeHtml(item.id)}">编辑</button>
@@ -795,7 +792,7 @@ function bindAppEvents() {
       if (state.activeTab === 'entry') {
         form.amount.value = '';
         form.remark.value = '';
-        form.transaction_type.value = '支出';
+        form.transaction_type.value = '欠款';
       } else {
         renderApp();
       }
@@ -809,7 +806,7 @@ function bindAppEvents() {
     const data = new FormData(event.currentTarget);
     state.filters.startDate = data.get('startDate');
     state.filters.endDate = data.get('endDate');
-    state.filters.storeId = data.get('storeId');
+    state.filters.storeId = '';
     state.filters.companyId = data.get('companyId');
     try {
       await loadTransactions();
@@ -897,7 +894,6 @@ function bindAppEvents() {
     const formData = new FormData(event.currentTarget);
     const company = {
       company_name: formData.get('company_name').trim(),
-      company_type: formData.get('company_type'),
       phone: formData.get('phone').trim(),
       remark: formData.get('remark').trim(),
     };
@@ -911,7 +907,7 @@ function bindAppEvents() {
       (item) => normalizeName(item.company_name) === normalizeName(company.company_name) && item.id !== state.editingCompanyId,
     );
     if (duplicate) {
-      alert('公司已存在，请直接使用已有公司。');
+      alert('公司/店号已存在，请直接使用已有名称。');
       return;
     }
 
@@ -975,7 +971,7 @@ function getExportRows(transactions, options = {}) {
     item.serial_no,
     getStoreLabel(item.store_id),
     options.numericAmount ? Number(money(item.amount)) : money(item.amount),
-    item.transaction_type,
+    getTypeLabel(item.transaction_type),
     getCompanyLabel(item),
     item.remittance_method || '',
     item.remark || '',
