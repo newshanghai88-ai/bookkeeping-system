@@ -17,6 +17,8 @@ const state = {
   editingId: null,
   editingCompanyId: null,
   companySearch: '',
+  entryCompanyQuery: '',
+  filterCompanyQuery: '',
   activeTab: 'entry',
   filters: {
     startDate: '',
@@ -73,6 +75,32 @@ function getCompanyLabel(itemOrCompanyId) {
   return '';
 }
 
+function getCompany(itemOrCompanyId) {
+  const companyId = typeof itemOrCompanyId === 'string' ? itemOrCompanyId : itemOrCompanyId?.company_id;
+  return state.allCompanies.find((item) => item.id === companyId) || null;
+}
+
+function getCompanyDisplay(company) {
+  if (!company) return '';
+  const no = company.company_no ? `${company.company_no}. ` : '';
+  const store = company.store_label ? ` / ${company.store_label}` : '';
+  return `${no}${company.company_name}${store}`;
+}
+
+function getCompanySearchText(company) {
+  return normalizeName([
+    company.company_no,
+    company.company_name,
+    company.store_label,
+    company.phone,
+    company.remark,
+  ].join(' '));
+}
+
+function getActiveCompanyId(companyId) {
+  return state.companies.some((company) => company.id === companyId) ? companyId : '';
+}
+
 function getDefaultStoreId() {
   const savedStoreId = localStorage.getItem('last_store_id');
   if (state.stores.some((store) => store.id === savedStoreId)) return savedStoreId;
@@ -99,7 +127,7 @@ function getTotals() {
 
   return {
     ...totals,
-    totalDebt: totals.debt - totals.repayment,
+    totalDebt: totals.debt - totals.repayment - totals.bankTransfer,
   };
 }
 
@@ -175,7 +203,7 @@ async function loadStores() {
 async function loadCompanies() {
   const { data, error } = await supabase
     .from('companies')
-    .select('id, company_name, company_type, phone, remark, is_deleted, created_at, updated_at')
+    .select('id, company_no, company_name, company_type, store_label, phone, remark, is_deleted, created_at, updated_at')
     .order('company_name', { ascending: true });
 
   if (error) throw error;
@@ -223,6 +251,7 @@ async function createCompany(company) {
     .insert({
       company_name: company.company_name,
       company_type: company.company_type || '其他',
+      store_label: company.store_label || null,
       phone: company.phone || null,
       remark: company.remark || null,
     })
@@ -238,6 +267,7 @@ async function updateCompany(id, company) {
     .from('companies')
     .update({
       company_name: company.company_name,
+      store_label: company.store_label || null,
       phone: company.phone || null,
       remark: company.remark || null,
     })
@@ -253,32 +283,6 @@ async function softDeleteCompany(id) {
     .eq('id', id);
 
   if (error) throw error;
-}
-
-async function quickAddCompany(name) {
-  const companyName = name.trim();
-  if (!companyName) throw new Error('请输入公司/店号名称');
-
-  const existing = state.companies.find((item) => normalizeName(item.company_name) === normalizeName(companyName));
-  if (existing) return existing.id;
-
-  const { data: remoteCompanies, error: findError } = await supabase
-    .from('companies')
-    .select('id, company_name')
-    .eq('is_deleted', false)
-    .ilike('company_name', companyName);
-
-  if (findError) throw findError;
-
-  const remoteExisting = (remoteCompanies || []).find((item) => normalizeName(item.company_name) === normalizeName(companyName));
-  if (remoteExisting) {
-    await loadCompanies();
-    return remoteExisting.id;
-  }
-
-  const created = await createCompany({ company_name: companyName, company_type: '其他' });
-  await loadCompanies();
-  return created.id;
 }
 
 async function loadLatestBackupLog() {
@@ -402,17 +406,56 @@ function storeOptions(selectedId = '') {
   ].join('');
 }
 
-function companyOptions(selectedId = '') {
-  return [
-    '<option value="">请选择公司/店号</option>',
-    ...state.companies.map(
-      (company) =>
-        `<option value="${escapeHtml(company.id)}" ${company.id === selectedId ? 'selected' : ''}>${escapeHtml(company.company_name)}</option>`,
-    ),
-  ].join('');
+function getMatchingCompanies(query) {
+  const keyword = normalizeName(query);
+  const companies = keyword
+    ? state.companies.filter((company) => getCompanySearchText(company).includes(keyword))
+    : state.companies;
+  return companies.slice(0, 30);
+}
+
+function renderCompanySearchOptions(context, query) {
+  const companies = getMatchingCompanies(query);
+
+  if (!companies.length) {
+    return '<p class="muted search-empty">没有找到公司/店号</p>';
+  }
+
+  return companies
+    .map(
+      (company) => `
+        <button type="button" class="company-option" data-company-select="${escapeHtml(company.id)}" data-company-context="${escapeHtml(context)}">
+          <strong>${escapeHtml(getCompanyDisplay(company))}</strong>
+          <span>${escapeHtml([company.phone, company.remark].filter(Boolean).join(' / '))}</span>
+        </button>
+      `,
+    )
+    .join('');
+}
+
+function renderCompanySearchBox({ context, name, selectedId = '', query = '', required = false }) {
+  const selectedCompany = getCompany(selectedId);
+  const inputValue = query || getCompanyDisplay(selectedCompany);
+
+  return `
+    <div class="company-picker" data-company-picker="${escapeHtml(context)}">
+      <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(selectedId)}" data-company-hidden="${escapeHtml(context)}" ${required ? 'required' : ''} />
+      <input
+        type="search"
+        autocomplete="off"
+        placeholder="搜索公司名称、店号、电话、备注"
+        value="${escapeHtml(inputValue)}"
+        data-company-search="${escapeHtml(context)}"
+        ${required ? 'required' : ''}
+      />
+      <div class="company-options" data-company-options="${escapeHtml(context)}"></div>
+    </div>
+  `;
 }
 
 function transactionForm(item = null) {
+  const selectedCompanyId = getActiveCompanyId(item?.company_id || localStorage.getItem('last_company_id') || '');
+
   return `
     <form id="${item ? 'edit-form' : 'create-form'}" class="form">
       <input type="hidden" name="store_id" value="${escapeHtml(item?.store_id || getDefaultStoreId())}" />
@@ -422,15 +465,14 @@ function transactionForm(item = null) {
       </label>
       <label>
         公司/店号
-        <select name="company_id" required>${companyOptions(item?.company_id || localStorage.getItem('last_company_id') || '')}</select>
+        ${renderCompanySearchBox({
+          context: item ? 'edit' : 'entry',
+          name: 'company_id',
+          selectedId: selectedCompanyId,
+          query: item ? '' : state.entryCompanyQuery,
+          required: true,
+        })}
       </label>
-      <div class="quick-company">
-        <label>
-          新公司/店号
-          <input id="quick-company-name" placeholder="输入新名称" />
-        </label>
-        <button type="button" class="secondary" id="quick-add-company">新增并选中</button>
-      </div>
       ${item?.remittance_company && !item?.company_id ? `<p class="muted">历史公司文本：${escapeHtml(item.remittance_company)}</p>` : ''}
       <label>
         金额
@@ -529,7 +571,12 @@ function renderDetailsPage(editingItem) {
         </label>
         <label>
           公司/店号
-          <select name="companyId">${companyOptions(state.filters.companyId)}</select>
+          ${renderCompanySearchBox({
+            context: 'filter',
+            name: 'companyId',
+            selectedId: state.filters.companyId,
+            query: state.filterCompanyQuery,
+          })}
         </label>
         <button type="submit">查询</button>
         <button type="button" class="secondary" id="reset-filter">重置</button>
@@ -540,6 +587,7 @@ function renderDetailsPage(editingItem) {
           <strong>${escapeHtml(selectedCompanyDebt.companyName)}</strong>
           <span>欠款合计：${money(selectedCompanyDebt.debt)}</span>
           <span>还款合计：${money(selectedCompanyDebt.repayment)}</span>
+          <span>银行汇款：${money(selectedCompanyDebt.bankTransfer)}</span>
           <span class="${selectedCompanyDebt.balance >= 0 ? 'negative' : 'positive'}">当前余额：${money(selectedCompanyDebt.balance)}</span>
         </div>
       ` : ''}
@@ -590,6 +638,7 @@ function getCompanyDebtRows() {
         companyName: company.company_name,
         debt: 0,
         repayment: 0,
+        bankTransfer: 0,
         balance: 0,
       });
     }
@@ -598,7 +647,8 @@ function getCompanyDebtRows() {
     const amount = Number(transaction.amount || 0);
     if (transaction.transaction_type === '欠款') row.debt += amount;
     if (transaction.transaction_type === '还款') row.repayment += amount;
-    row.balance = row.debt - row.repayment;
+    if (transaction.transaction_type === '银行汇款') row.bankTransfer += amount;
+    row.balance = row.debt - row.repayment - row.bankTransfer;
   }
 
   return [...byCompany.values()]
@@ -612,6 +662,7 @@ function getCompanyDebtRow(companyId) {
     companyName: getCompanyLabel(companyId),
     debt: 0,
     repayment: 0,
+    bankTransfer: 0,
     balance: 0,
   };
 }
@@ -646,9 +697,19 @@ function renderCompanyManager(editingCompany = null) {
     <section class="panel page-panel">
       <h2>${editingCompany ? '编辑公司/店号' : '公司/店号管理'}</h2>
       <form id="company-form" class="form">
+        ${editingCompany ? `
+          <label>
+            序号
+            <input value="${escapeHtml(editingCompany.company_no || '')}" disabled />
+          </label>
+        ` : ''}
         <label>
-          公司/店号名称
+          公司名称
           <input name="company_name" value="${escapeHtml(editingCompany?.company_name || '')}" required />
+        </label>
+        <label>
+          店号
+          <input name="store_label" value="${escapeHtml(editingCompany?.store_label || '')}" />
         </label>
         <label>
           电话
@@ -664,9 +725,17 @@ function renderCompanyManager(editingCompany = null) {
 
       <label class="company-search">
         搜索公司/店号
-        <input id="company-search" value="${escapeHtml(state.companySearch)}" placeholder="公司名、电话、备注" />
+        <input id="company-search" value="${escapeHtml(state.companySearch)}" placeholder="公司名、店号、电话、备注" />
       </label>
 
+      <div class="company-list-head">
+        <span>序号</span>
+        <span>公司名称</span>
+        <span>店号</span>
+        <span>电话</span>
+        <span>备注</span>
+        <span>操作</span>
+      </div>
       <div class="company-list">
         ${renderCompanyListItems()}
       </div>
@@ -678,7 +747,7 @@ function getVisibleCompanies() {
   const keyword = normalizeName(state.companySearch);
   return state.companies.filter((company) => {
     if (!keyword) return true;
-    return [company.company_name, company.phone, company.remark].some((value) => normalizeName(value).includes(keyword));
+    return getCompanySearchText(company).includes(keyword);
   });
 }
 
@@ -688,10 +757,11 @@ function renderCompanyListItems() {
   return visibleCompanies.length
     ? visibleCompanies.map((company) => `
         <article class="company-item">
-          <div>
-            <strong>${escapeHtml(company.company_name)}</strong>
-            <p class="muted">${escapeHtml(company.phone || '')} ${escapeHtml(company.remark || '')}</p>
-          </div>
+          <span>${escapeHtml(company.company_no || '')}</span>
+          <strong>${escapeHtml(company.company_name)}</strong>
+          <span>${escapeHtml(company.store_label || '')}</span>
+          <span>${escapeHtml(company.phone || '')}</span>
+          <span class="muted">${escapeHtml(company.remark || '')}</span>
           <div class="actions">
             <button class="secondary small" data-company-edit="${escapeHtml(company.id)}">编辑</button>
             <button class="danger small" data-company-delete="${escapeHtml(company.id)}">停用</button>
@@ -745,7 +815,7 @@ function renderTransactionItem(item) {
       </div>
       <div>${escapeHtml(companyName)}</div>
       <div class="amount">${money(item.amount)}</div>
-      <div><span class="tag">${escapeHtml(getTypeLabel(item.transaction_type))}</span></div>
+      <div><span class="tag ${getTypeClass(item.transaction_type)}">${escapeHtml(getTypeLabel(item.transaction_type))}</span></div>
       <div class="muted">${escapeHtml(item.remark || '')}</div>
       <div class="actions">
         <button class="secondary small" data-edit="${escapeHtml(item.id)}">编辑</button>
@@ -755,8 +825,48 @@ function renderTransactionItem(item) {
   `;
 }
 
+function getTypeClass(type) {
+  if (type === '还款') return 'type-repayment';
+  if (type === '银行汇款') return 'type-bank-transfer';
+  return 'type-debt';
+}
+
+function bindCompanySearch(context) {
+  const input = document.querySelector(`[data-company-search="${context}"]`);
+  const hidden = document.querySelector(`[data-company-hidden="${context}"]`);
+  const options = document.querySelector(`[data-company-options="${context}"]`);
+  if (!input || !hidden || !options) return;
+
+  input.addEventListener('input', () => {
+    if (context === 'entry') state.entryCompanyQuery = input.value;
+    if (context === 'filter') state.filterCompanyQuery = input.value;
+    hidden.value = '';
+    options.innerHTML = renderCompanySearchOptions(context, input.value);
+  });
+
+  input.addEventListener('focus', () => {
+    options.innerHTML = renderCompanySearchOptions(context, input.value);
+  });
+
+  options.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-company-select]');
+    if (!button) return;
+    const company = getCompany(button.dataset.companySelect);
+    if (!company) return;
+    hidden.value = company.id;
+    input.value = getCompanyDisplay(company);
+    if (context === 'entry') state.entryCompanyQuery = input.value;
+    if (context === 'filter') state.filterCompanyQuery = input.value;
+    options.innerHTML = '';
+  });
+}
+
 function bindAppEvents() {
   document.querySelector('#sign-out').addEventListener('click', signOut);
+
+  bindCompanySearch('entry');
+  bindCompanySearch('edit');
+  bindCompanySearch('filter');
 
   document.querySelectorAll('[data-tab]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -818,6 +928,7 @@ function bindAppEvents() {
 
   document.querySelector('#reset-filter')?.addEventListener('click', async () => {
     state.filters = { startDate: '', endDate: '', storeId: '', companyId: '' };
+    state.filterCompanyQuery = '';
     try {
       await loadTransactions();
       renderApp();
@@ -873,27 +984,12 @@ function bindAppEvents() {
     renderApp();
   });
 
-  document.querySelector('#quick-add-company')?.addEventListener('click', async () => {
-    const input = document.querySelector('#quick-company-name');
-    try {
-      const companyId = await quickAddCompany(input.value);
-      localStorage.setItem('last_company_id', companyId);
-      const select = document.querySelector('[name="company_id"]');
-      if (select) {
-        select.innerHTML = companyOptions(companyId);
-        select.value = companyId;
-      }
-      input.value = '';
-    } catch (error) {
-      alert(getFriendlyError(error));
-    }
-  });
-
   document.querySelector('#company-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const company = {
       company_name: formData.get('company_name').trim(),
+      store_label: formData.get('store_label').trim(),
       phone: formData.get('phone').trim(),
       remark: formData.get('remark').trim(),
     };
@@ -966,23 +1062,32 @@ function bindAppEvents() {
 }
 
 function getExportRows(transactions, options = {}) {
-  return transactions.map((item) => [
-    item.transaction_date,
-    item.serial_no,
-    getStoreLabel(item.store_id),
-    options.numericAmount ? Number(money(item.amount)) : money(item.amount),
-    getTypeLabel(item.transaction_type),
-    getCompanyLabel(item),
-    item.remittance_method || '',
-    item.remark || '',
-    formatDateTime(item.created_at),
-    formatDateTime(item.updated_at),
-    item.operator || '',
-  ]);
+  return [...transactions]
+    .sort((a, b) => {
+      const companyCompare = getCompanyLabel(a).localeCompare(getCompanyLabel(b), 'zh-CN');
+      if (companyCompare) return companyCompare;
+      return String(a.transaction_date || '').localeCompare(String(b.transaction_date || ''));
+    })
+    .map((item) => {
+      const company = getCompany(item);
+      return [
+        company?.company_no || '',
+        getCompanyLabel(item),
+        company?.store_label || '',
+        item.transaction_date,
+        item.serial_no,
+        options.numericAmount ? Number(money(item.amount)) : money(item.amount),
+        getTypeLabel(item.transaction_type),
+        item.remark || '',
+        formatDateTime(item.created_at),
+        formatDateTime(item.updated_at),
+        item.operator || '',
+      ];
+    });
 }
 
 function exportCsv() {
-  const headers = ['日期', '序号', '店号', '金额', '类型', '汇款公司', '汇款方式', '备注', '创建时间', '修改时间', '操作人'];
+  const headers = ['公司序号', '公司名称', '店号', '日期', '序号', '金额', '类型', '备注', '创建时间', '修改时间', '操作人'];
   const rows = getExportRows(state.transactions);
 
   const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
@@ -997,14 +1102,14 @@ function exportCsv() {
 
 async function exportXlsx(transactions, fileName) {
   const { default: ExcelJS } = await import('exceljs');
-  const headers = ['日期', '序号', '店号', '金额', '类型', '汇款公司', '汇款方式', '备注', '创建时间', '修改时间', '操作人'];
+  const headers = ['公司序号', '公司名称', '店号', '日期', '序号', '金额', '类型', '备注', '创建时间', '修改时间', '操作人'];
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('账目明细');
 
   worksheet.columns = headers.map((header, index) => ({
     header,
     key: header,
-    width: [12, 22, 14, 12, 10, 18, 12, 28, 20, 20, 20][index],
+    width: [10, 22, 14, 12, 22, 12, 12, 28, 20, 20, 20][index],
   }));
 
   worksheet.getRow(1).font = { bold: true };

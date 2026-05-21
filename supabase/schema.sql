@@ -12,8 +12,10 @@ create table if not exists stores (
 
 create table if not exists companies (
   id uuid primary key default gen_random_uuid(),
+  company_no bigint,
   company_name text not null,
   company_type text not null default '其他' check (company_type in ('客户', '供应商', '其他')),
+  store_label text,
   phone text,
   remark text,
   created_at timestamptz not null default now(),
@@ -67,6 +69,41 @@ alter table transactions
 add constraint transactions_transaction_type_check
 check (transaction_type in ('欠款', '还款', '银行汇款'));
 
+create sequence if not exists companies_company_no_seq;
+
+alter table companies
+add column if not exists company_no bigint;
+
+alter table companies
+add column if not exists store_label text;
+
+with max_existing as (
+  select coalesce(max(company_no), 0) as base_no
+  from companies
+),
+numbered_companies as (
+  select id, max_existing.base_no + row_number() over (order by created_at, company_name, id) as row_no
+  from companies
+  cross join max_existing
+  where company_no is null
+)
+update companies
+set company_no = numbered_companies.row_no
+from numbered_companies
+where companies.id = numbered_companies.id;
+
+select setval(
+  'companies_company_no_seq',
+  greatest(coalesce((select max(company_no) from companies), 0), 1),
+  coalesce((select max(company_no) from companies), 0) > 0
+);
+
+alter table companies
+alter column company_no set default nextval('companies_company_no_seq');
+
+alter table companies
+alter column company_no set not null;
+
 create table if not exists backup_logs (
   id uuid primary key default gen_random_uuid(),
   backup_type text not null,
@@ -85,7 +122,9 @@ create index if not exists idx_stores_is_deleted on stores(is_deleted);
 create unique index if not exists idx_companies_name_unique
 on companies (lower(company_name))
 where is_deleted = false;
+create unique index if not exists idx_companies_company_no_unique on companies(company_no);
 create index if not exists idx_companies_company_name on companies(company_name);
+create index if not exists idx_companies_store_label on companies(store_label);
 create index if not exists idx_companies_company_type on companies(company_type);
 create index if not exists idx_companies_is_deleted on companies(is_deleted);
 create index if not exists idx_transactions_store_id on transactions(store_id);
@@ -102,6 +141,17 @@ create or replace function update_updated_at()
 returns trigger as $$
 begin
   new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+create or replace function prevent_company_no_change()
+returns trigger as $$
+begin
+  if new.company_no <> old.company_no then
+    raise exception 'company_no cannot be changed';
+  end if;
+
   return new;
 end;
 $$ language plpgsql;
@@ -236,6 +286,12 @@ before update on companies
 for each row
 execute function update_updated_at();
 
+drop trigger if exists trigger_prevent_company_no_change on companies;
+create trigger trigger_prevent_company_no_change
+before update of company_no on companies
+for each row
+execute function prevent_company_no_change();
+
 drop trigger if exists trigger_update_transactions_updated_at on transactions;
 create trigger trigger_update_transactions_updated_at
 before update on transactions
@@ -343,6 +399,12 @@ comment on table transactions is
 
 comment on table companies is
 '公司/客户/供应商档案表。停用公司时不允许 delete，只能 update companies set is_deleted = true。';
+
+comment on column companies.company_no is
+'公司序号，数据库自动递增生成，不允许人工修改，停用后不重复使用。';
+
+comment on column companies.store_label is
+'店号/备注性编号，可编辑，用于页面搜索和导出。';
 
 comment on column transactions.company_id is
 '关联 companies.id。V2-1 起新账目必须选择 company_id；remittance_company 只保留给历史数据和备注显示。';

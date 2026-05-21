@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import ExcelJS from 'exceljs';
 import { Resend } from 'resend';
 
-const EXPORT_HEADERS = ['日期', '序号', '店号', '金额', '类型', '汇款公司', '汇款方式', '备注', '创建时间', '修改时间', '操作人'];
+const EXPORT_HEADERS = ['公司序号', '公司名称', '店号', '日期', '序号', '金额', '类型', '备注', '创建时间', '修改时间', '操作人'];
 
 function todayString() {
   return new Date().toISOString().slice(0, 10);
@@ -47,21 +47,30 @@ async function createWorkbookBuffer(transactions, storeMap, companyMap) {
   worksheet.columns = EXPORT_HEADERS.map((header, index) => ({
     header,
     key: header,
-    width: [12, 22, 14, 12, 10, 18, 12, 28, 20, 20, 20][index],
+    width: [10, 22, 14, 12, 22, 12, 12, 28, 20, 20, 20][index],
   }));
 
   worksheet.getRow(1).font = { bold: true };
   worksheet.getRow(1).alignment = { vertical: 'middle' };
 
-  for (const item of transactions) {
+  const sortedTransactions = [...transactions].sort((a, b) => {
+    const companyA = companyMap.get(a.company_id)?.company_name || a.remittance_company || '';
+    const companyB = companyMap.get(b.company_id)?.company_name || b.remittance_company || '';
+    const companyCompare = companyA.localeCompare(companyB, 'zh-CN');
+    if (companyCompare) return companyCompare;
+    return String(a.transaction_date || '').localeCompare(String(b.transaction_date || ''));
+  });
+
+  for (const item of sortedTransactions) {
+    const company = companyMap.get(item.company_id);
     worksheet.addRow([
+      company?.company_no || '',
+      company?.company_name || item.remittance_company || '',
+      company?.store_label || storeMap.get(item.store_id) || '',
       item.transaction_date,
       item.serial_no,
-      storeMap.get(item.store_id) || '',
       Number(Number(item.amount || 0).toFixed(2)),
       item.transaction_type,
-      companyMap.get(item.company_id) || item.remittance_company || '',
-      item.remittance_method || '',
       item.remark || '',
       formatDateTime(item.created_at),
       formatDateTime(item.updated_at),
@@ -80,7 +89,7 @@ async function loadBackupData(supabase) {
     { data: transactions, error: transactionsError },
   ] = await Promise.all([
     supabase.from('stores').select('id, store_no'),
-    supabase.from('companies').select('id, company_name'),
+    supabase.from('companies').select('id, company_no, company_name, store_label'),
     supabase
       .from('transactions')
       .select('*')
@@ -96,7 +105,7 @@ async function loadBackupData(supabase) {
   return {
     transactions: transactions || [],
     storeMap: new Map((stores || []).map((store) => [store.id, store.store_no])),
-    companyMap: new Map((companies || []).map((company) => [company.id, company.company_name])),
+    companyMap: new Map((companies || []).map((company) => [company.id, company])),
   };
 }
 

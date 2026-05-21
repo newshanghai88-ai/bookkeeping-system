@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bookkeeping-system-v4';
+const CACHE_NAME = 'bookkeeping-system-v5';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',

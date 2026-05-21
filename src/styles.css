@@ -163,9 +163,36 @@ textarea {
   justify-content: flex-end;
 }
 
-.quick-company {
+.company-picker {
   display: grid;
   gap: 8px;
+}
+
+.company-options {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.company-options:empty {
+  display: none;
+}
+
+.company-option {
+  display: grid;
+  justify-items: start;
+  min-height: 44px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #111827;
+  text-align: left;
+  padding: 8px 10px;
+}
+
+.company-option span,
+.search-empty {
+  font-size: 12px;
 }
 
 .totals {
@@ -258,6 +285,10 @@ textarea {
   margin-top: 12px;
 }
 
+.company-list-head {
+  display: none;
+}
+
 .company-debt-row,
 .company-item {
   display: grid;
@@ -303,12 +334,26 @@ textarea {
 
 .tag {
   display: inline-block;
-  margin-left: 8px;
   border-radius: 999px;
   background: #eef2ff;
   color: #3730a3;
   font-size: 12px;
   padding: 2px 8px;
+}
+
+.tag.type-debt {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.tag.type-repayment {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.tag.type-bank-transfer {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .actions {
@@ -332,7 +377,7 @@ textarea {
   }
 
   .company-summary {
-    grid-template-columns: 1.5fr 1fr 1fr 1fr;
+    grid-template-columns: 1.5fr repeat(4, 1fr);
     align-items: center;
   }
 
@@ -342,8 +387,18 @@ textarea {
   }
 
   .company-item {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 70px 1.2fr 1fr 1fr 1.4fr auto;
     align-items: center;
+  }
+
+  .company-list-head {
+    display: grid;
+    grid-template-columns: 70px 1.2fr 1fr 1fr 1.4fr auto;
+    gap: 8px;
+    margin-top: 16px;
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 800;
   }
 }
 
