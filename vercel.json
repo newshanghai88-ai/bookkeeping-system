@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/weekly-backup",
-      "schedule": "0 20 * * 0"
-    }
-  ]
-}
