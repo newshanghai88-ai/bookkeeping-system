@@ -53,8 +53,34 @@ button.small {
   border-bottom: 1px solid #e5e7eb;
 }
 
+.tabs {
+  position: sticky;
+  top: 57px;
+  z-index: 4;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  border-bottom: 1px solid #e5e7eb;
+  background: white;
+  padding: 8px 16px;
+}
+
+.tab-button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #374151;
+  padding: 0 14px;
+}
+
+.tab-button.active {
+  background: #2563eb;
+  color: white;
+}
+
 .shell {
-  width: min(1180px, 100%);
+  width: min(1100px, 100%);
   margin: 0 auto;
   padding: 16px;
 }
@@ -64,22 +90,15 @@ button.small {
   padding-top: 48px;
 }
 
-.grid {
-  display: grid;
-  gap: 16px;
-}
-
-.lower-grid {
-  display: grid;
-  gap: 16px;
-  margin-top: 16px;
-}
-
 .panel {
   background: white;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 16px;
+}
+
+.page-panel {
+  width: 100%;
 }
 
 h1,
@@ -284,16 +303,6 @@ textarea {
 }
 
 @media (min-width: 760px) {
-  .grid {
-    grid-template-columns: 380px 1fr;
-    align-items: start;
-  }
-
-  .lower-grid {
-    grid-template-columns: 1fr 1fr;
-    align-items: start;
-  }
-
   .filters {
     grid-template-columns: repeat(6, minmax(0, 1fr));
     align-items: end;
@@ -320,6 +329,33 @@ textarea {
 }
 
 @media (max-width: 560px) {
+  body {
+    padding-bottom: 76px;
+  }
+
+  .topbar {
+    position: static;
+  }
+
+  .tabs {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    justify-content: space-between;
+    border-bottom: 0;
+    border-top: 1px solid #e5e7eb;
+    padding: 8px;
+  }
+
+  .tab-button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+
   .section-head {
     align-items: stretch;
     flex-direction: column;

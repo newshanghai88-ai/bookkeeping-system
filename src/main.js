@@ -17,6 +17,7 @@ const state = {
   editingId: null,
   editingCompanyId: null,
   companySearch: '',
+  activeTab: 'entry',
   filters: {
     startDate: '',
     endDate: '',
@@ -466,81 +467,119 @@ function transactionForm(item = null) {
 }
 
 function renderApp() {
-  const totals = getTotals();
   const editingItem = state.transactions.find((item) => item.id === state.editingId);
+  const editingCompany = state.companies.find((item) => item.id === state.editingCompanyId);
 
   app.innerHTML = `
     <header class="topbar">
       <strong>记账系统</strong>
       <button class="secondary small" id="sign-out">退出</button>
     </header>
+    <nav class="tabs">
+      ${renderTabButton('entry', '记账')}
+      ${renderTabButton('details', '明细')}
+      ${renderTabButton('debts', '公司欠款')}
+      ${renderTabButton('companies', '公司管理')}
+      ${renderTabButton('backup', '备份')}
+    </nav>
     <main class="shell">
-      <section class="grid">
-        <section class="panel">
-          <h2>${editingItem ? '编辑账目' : '新增账目'}</h2>
-          <p class="muted">序号由数据库自动生成，不能手动输入。</p>
-          ${transactionForm(editingItem)}
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <h2>账目明细</h2>
-            <div class="export-actions">
-              <button class="secondary small" id="export-csv">导出 CSV</button>
-              <button class="secondary small" id="export-xlsx">导出 Excel</button>
-              <button class="secondary small" id="export-all-xlsx">导出全部未删除账目</button>
-            </div>
-          </div>
-
-          <form id="filter-form" class="filters">
-            <label>
-              开始日期
-              <input name="startDate" type="date" value="${state.filters.startDate}" />
-            </label>
-            <label>
-              结束日期
-              <input name="endDate" type="date" value="${state.filters.endDate}" />
-            </label>
-            <label>
-              店号
-              <select name="storeId">${storeOptions(state.filters.storeId)}</select>
-            </label>
-            <label>
-              公司
-              <select name="companyId">${companyOptions(state.filters.companyId)}</select>
-            </label>
-            <button type="submit">查询</button>
-            <button type="button" class="secondary" id="reset-filter">重置</button>
-          </form>
-
-          <div class="totals">
-            <div><span>收入</span><strong>${money(totals.income)}</strong></div>
-            <div><span>支出</span><strong>${money(totals.expense)}</strong></div>
-            <div><span>欠款</span><strong>${money(totals.debt)}</strong></div>
-            <div><span>还款</span><strong>${money(totals.repayment)}</strong></div>
-            <div><span>净额</span><strong class="${totals.net >= 0 ? 'positive' : 'negative'}">${money(totals.net)}</strong></div>
-            <div><span>总欠款</span><strong>${money(totals.totalDebt)}</strong></div>
-          </div>
-
-          ${renderBackupStatus()}
-
-          <div class="list">
-            ${
-              state.transactions.length
-                ? state.transactions.map(renderTransactionItem).join('')
-                : '<p class="muted">暂无账目。</p>'
-            }
-          </div>
-        </section>
-      </section>
-      <section class="lower-grid">
-        ${renderCompanyDebtSection()}
-        ${renderCompanyManager()}
-      </section>
+      ${renderActivePage(editingItem, editingCompany)}
     </main>
   `;
 
   bindAppEvents();
+}
+
+function renderTabButton(tabId, label) {
+  return `<button type="button" class="tab-button ${state.activeTab === tabId ? 'active' : ''}" data-tab="${tabId}">${label}</button>`;
+}
+
+function renderActivePage(editingItem, editingCompany) {
+  if (state.activeTab === 'details') return renderDetailsPage(editingItem);
+  if (state.activeTab === 'debts') return renderCompanyDebtSection();
+  if (state.activeTab === 'companies') return renderCompanyManager(editingCompany);
+  if (state.activeTab === 'backup') return renderBackupPage();
+  return renderEntryPage(editingItem);
+}
+
+function renderEntryPage(editingItem) {
+  return `
+    <section class="panel page-panel">
+      <h2>${editingItem ? '编辑账目' : '记账'}</h2>
+      <p class="muted">序号由数据库自动生成。</p>
+      ${transactionForm(editingItem)}
+    </section>
+  `;
+}
+
+function renderDetailsPage(editingItem) {
+  const totals = getTotals();
+
+  return `
+    <section class="panel page-panel">
+      <div class="section-head">
+        <h2>${editingItem ? '编辑账目' : '账目明细'}</h2>
+        <div class="export-actions">
+          <button class="secondary small" id="export-csv">导出 CSV</button>
+          <button class="secondary small" id="export-xlsx">导出 Excel</button>
+        </div>
+      </div>
+
+      ${editingItem ? transactionForm(editingItem) : ''}
+
+      <form id="filter-form" class="filters">
+        <label>
+          开始日期
+          <input name="startDate" type="date" value="${state.filters.startDate}" />
+        </label>
+        <label>
+          结束日期
+          <input name="endDate" type="date" value="${state.filters.endDate}" />
+        </label>
+        <label>
+          店号
+          <select name="storeId">${storeOptions(state.filters.storeId)}</select>
+        </label>
+        <label>
+          公司
+          <select name="companyId">${companyOptions(state.filters.companyId)}</select>
+        </label>
+        <button type="submit">查询</button>
+        <button type="button" class="secondary" id="reset-filter">重置</button>
+      </form>
+
+      <div class="totals">
+        <div><span>收入</span><strong>${money(totals.income)}</strong></div>
+        <div><span>支出</span><strong>${money(totals.expense)}</strong></div>
+        <div><span>欠款</span><strong>${money(totals.debt)}</strong></div>
+        <div><span>还款</span><strong>${money(totals.repayment)}</strong></div>
+        <div><span>净额</span><strong class="${totals.net >= 0 ? 'positive' : 'negative'}">${money(totals.net)}</strong></div>
+        <div><span>总欠款</span><strong>${money(totals.totalDebt)}</strong></div>
+      </div>
+
+      <div class="list">
+        ${
+          state.transactions.length
+            ? state.transactions.map(renderTransactionItem).join('')
+            : '<p class="muted">暂无账目。</p>'
+        }
+      </div>
+    </section>
+  `;
+}
+
+function renderBackupPage() {
+  return `
+    <section class="panel page-panel">
+      <div class="section-head">
+        <h2>备份</h2>
+        <div class="export-actions">
+          <button class="secondary small" id="export-all-xlsx">导出全部未删除账目</button>
+        </div>
+      </div>
+      ${renderBackupStatus()}
+    </section>
+  `;
 }
 
 function getCompanyDebtRows() {
@@ -597,11 +636,9 @@ function renderCompanyDebtSection() {
   `;
 }
 
-function renderCompanyManager() {
-  const editingCompany = state.companies.find((item) => item.id === state.editingCompanyId);
-
+function renderCompanyManager(editingCompany = null) {
   return `
-    <section class="panel">
+    <section class="panel page-panel">
       <h2>${editingCompany ? '编辑公司' : '公司管理'}</h2>
       <form id="company-form" class="form">
         <label>
@@ -724,8 +761,17 @@ function renderTransactionItem(item) {
 function bindAppEvents() {
   document.querySelector('#sign-out').addEventListener('click', signOut);
 
+  document.querySelectorAll('[data-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.activeTab = button.dataset.tab;
+      if (state.activeTab !== 'details') state.editingId = null;
+      if (state.activeTab !== 'companies') state.editingCompanyId = null;
+      renderApp();
+    });
+  });
+
   const activeForm = document.querySelector('#edit-form') || document.querySelector('#create-form');
-  activeForm.addEventListener('submit', async (event) => {
+  activeForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
 
@@ -739,22 +785,26 @@ function bindAppEvents() {
       if (state.editingId) {
         await updateTransaction(state.editingId, data);
         state.editingId = null;
+        state.activeTab = 'details';
       } else {
         await createTransaction(data);
-        form.amount.value = '';
-        form.remark.value = '';
-        form.transaction_type.value = '支出';
       }
 
       await loadTransactions();
       await loadCompanyDebtTransactions();
-      renderApp();
+      if (state.activeTab === 'entry') {
+        form.amount.value = '';
+        form.remark.value = '';
+        form.transaction_type.value = '支出';
+      } else {
+        renderApp();
+      }
     } catch (error) {
       alert(getFriendlyError(error));
     }
   });
 
-  document.querySelector('#filter-form').addEventListener('submit', async (event) => {
+  document.querySelector('#filter-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     state.filters.startDate = data.get('startDate');
@@ -769,7 +819,7 @@ function bindAppEvents() {
     }
   });
 
-  document.querySelector('#reset-filter').addEventListener('click', async () => {
+  document.querySelector('#reset-filter')?.addEventListener('click', async () => {
     state.filters = { startDate: '', endDate: '', storeId: '', companyId: '' };
     try {
       await loadTransactions();
@@ -779,8 +829,8 @@ function bindAppEvents() {
     }
   });
 
-  document.querySelector('#export-csv').addEventListener('click', exportCsv);
-  document.querySelector('#export-xlsx').addEventListener('click', async () => {
+  document.querySelector('#export-csv')?.addEventListener('click', exportCsv);
+  document.querySelector('#export-xlsx')?.addEventListener('click', async () => {
     try {
       await exportXlsx(state.transactions, `账目备份_${today()}.xlsx`);
     } catch (error) {
@@ -788,7 +838,7 @@ function bindAppEvents() {
     }
   });
 
-  document.querySelector('#export-all-xlsx').addEventListener('click', async () => {
+  document.querySelector('#export-all-xlsx')?.addEventListener('click', async () => {
     try {
       const allTransactions = await loadAllActiveTransactions();
       await exportXlsx(allTransactions, `账目完整备份_${today()}.xlsx`);
@@ -800,6 +850,7 @@ function bindAppEvents() {
   document.querySelectorAll('[data-edit]').forEach((button) => {
     button.addEventListener('click', () => {
       state.editingId = button.dataset.edit;
+      state.activeTab = 'details';
       renderApp();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
