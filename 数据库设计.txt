@@ -1,0 +1,58 @@
+数据库设计
+
+一、账目明细表：transactions
+
+用途：
+记录每一笔收入、支出、欠款、还款明细。该表是记账系统的核心业务表。
+
+字段设计：
+
+| 字段名 | 数据库字段 | 类型建议 | 是否必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| id | id | uuid / bigint | 是 | 主键，系统内部唯一标识 |
+| 序号 | serial_no | text / varchar | 是 | 业务编号，不可随意修改 |
+| 店号 | store_id | uuid / bigint | 是 | 关联店铺表 stores.id |
+| 日期 | transaction_date | date | 是 | 交易日期 |
+| 金额 | amount | numeric(12,2) | 是 | 金额，必须为数值类型 |
+| 类型 | transaction_type | text / enum | 是 | 收入 / 支出 / 欠款 / 还款 |
+| 汇款公司 | remittance_company | text | 否 | 对方公司名称，例如供应商或客户 |
+| 汇款方式 | remittance_method | text / enum | 是 | 现金 / 银行转账 / 微信 / 支付宝 / 其他 |
+| 汇款账号 | remittance_account | text | 否 | 银行账号、微信号、支付宝账号或备注 |
+| 备注 | remark | text | 否 | 自由填写 |
+| 创建时间 | created_at | timestamptz | 是 | 创建时间，默认当前时间 |
+| 修改时间 | updated_at | timestamptz | 是 | 修改时间，更新数据时自动刷新 |
+| 操作人 | operator | text | 是 | 记录是谁录入或修改 |
+| 是否删除 | is_deleted | boolean | 是 | 软删除字段，默认 false |
+
+约束要求：
+
+- id 是主键。
+- serial_no 是业务编号，正常情况下不允许随意修改。
+- store_id 必须关联店铺表。
+- amount 必须使用数值类型，不能使用文本类型。
+- transaction_type 只能是：收入、支出、欠款、还款。
+- remittance_method 只能是：现金、银行转账、微信、支付宝、其他。
+- is_deleted 默认 false，删除账目时只改为 true，不直接删除数据。
+- created_at 默认当前时间。
+- updated_at 在每次修改账目时更新为当前时间。
+
+Supabase / PostgreSQL 建表示例：
+
+```sql
+create table if not exists transactions (
+  id uuid primary key default gen_random_uuid(),
+  serial_no text not null,
+  store_id uuid not null references stores(id),
+  transaction_date date not null,
+  amount numeric(12,2) not null,
+  transaction_type text not null check (transaction_type in ('收入', '支出', '欠款', '还款')),
+  remittance_company text,
+  remittance_method text not null check (remittance_method in ('现金', '银行转账', '微信', '支付宝', '其他')),
+  remittance_account text,
+  remark text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  operator text not null,
+  is_deleted boolean not null default false
+);
+```
