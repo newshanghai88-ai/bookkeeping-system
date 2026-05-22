@@ -164,15 +164,24 @@ textarea {
 }
 
 .company-picker {
-  display: grid;
-  gap: 8px;
+  position: relative;
 }
 
 .company-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
   display: grid;
   gap: 6px;
-  max-height: 220px;
+  max-height: 240px;
   overflow: auto;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  padding: 6px;
 }
 
 .company-options:empty {
@@ -181,18 +190,29 @@ textarea {
 
 .company-option {
   display: grid;
+  gap: 2px;
   justify-items: start;
-  min-height: 44px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
+  min-height: 48px;
+  border: 0;
+  border-radius: 6px;
+  background: white;
   color: #111827;
   text-align: left;
   padding: 8px 10px;
 }
 
+.company-option:hover,
+.company-option:focus {
+  background: #f3f4f6;
+}
+
 .company-option span,
 .search-empty {
   font-size: 12px;
+}
+
+.search-empty {
+  padding: 8px 10px;
 }
 
 .totals {

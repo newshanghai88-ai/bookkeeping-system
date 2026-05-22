@@ -408,14 +408,14 @@ function storeOptions(selectedId = '') {
 
 function getMatchingCompanies(query) {
   const keyword = normalizeName(query);
-  const companies = keyword
-    ? state.companies.filter((company) => getCompanySearchText(company).includes(keyword))
-    : state.companies;
+  if (!keyword) return [];
+  const companies = state.companies.filter((company) => getCompanySearchText(company).includes(keyword));
   return companies.slice(0, 30);
 }
 
 function renderCompanySearchOptions(context, query) {
   const companies = getMatchingCompanies(query);
+  if (!normalizeName(query)) return '';
 
   if (!companies.length) {
     return '<p class="muted search-empty">没有找到公司/店号</p>';
@@ -832,20 +832,44 @@ function getTypeClass(type) {
 }
 
 function bindCompanySearch(context) {
+  const picker = document.querySelector(`[data-company-picker="${context}"]`);
   const input = document.querySelector(`[data-company-search="${context}"]`);
   const hidden = document.querySelector(`[data-company-hidden="${context}"]`);
   const options = document.querySelector(`[data-company-options="${context}"]`);
-  if (!input || !hidden || !options) return;
+  if (!picker || !input || !hidden || !options) return;
+
+  const closeOptions = () => {
+    options.innerHTML = '';
+  };
+
+  const updateOptions = () => {
+    const query = input.value;
+    if (context === 'entry') state.entryCompanyQuery = query;
+    if (context === 'filter') state.filterCompanyQuery = query;
+
+    if (!normalizeName(query)) {
+      hidden.value = '';
+      if (context === 'filter') state.filters.companyId = '';
+      closeOptions();
+      return;
+    }
+
+    hidden.value = '';
+    options.innerHTML = renderCompanySearchOptions(context, query);
+  };
 
   input.addEventListener('input', () => {
-    if (context === 'entry') state.entryCompanyQuery = input.value;
-    if (context === 'filter') state.filterCompanyQuery = input.value;
-    hidden.value = '';
-    options.innerHTML = renderCompanySearchOptions(context, input.value);
+    updateOptions();
   });
 
   input.addEventListener('focus', () => {
-    options.innerHTML = renderCompanySearchOptions(context, input.value);
+    if (!hidden.value) {
+      options.innerHTML = renderCompanySearchOptions(context, input.value);
+    }
+  });
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeOptions();
   });
 
   options.addEventListener('click', (event) => {
@@ -857,7 +881,11 @@ function bindCompanySearch(context) {
     input.value = getCompanyDisplay(company);
     if (context === 'entry') state.entryCompanyQuery = input.value;
     if (context === 'filter') state.filterCompanyQuery = input.value;
-    options.innerHTML = '';
+    closeOptions();
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!picker.contains(event.target)) closeOptions();
   });
 }
 
